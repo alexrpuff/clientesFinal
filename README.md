@@ -24,6 +24,35 @@ docker compose up -d      # PostgreSQL, pgAdmin, RabbitMQ e Mailpit
 | pgAdmin | http://localhost:5053 — `coti@email.com` / `Coti@2026` |
 | PostgreSQL | `localhost:5436`, banco `bd-clientesapi`, usuário `coti` / senha `coti` |
 
+## Configuração por variáveis de ambiente (hospedagem)
+
+Todos os acessos a recursos externos do `application.yaml` são lidos de variáveis de ambiente no formato `${VARIAVEL:valor-padrão}`. Localmente nada precisa ser definido: os valores padrão apontam para os containers do `docker-compose.yml`. Na hospedagem (ex.: AWS Elastic Beanstalk, ECS ou EC2), basta definir as variáveis no ambiente, sem alterar o código.
+
+| Variável | Padrão (desenvolvimento) | Na AWS |
+|---|---|---|
+| `SERVER_PORT` | `8083` | Porta exigida pelo serviço (ex.: `5000` no Elastic Beanstalk) |
+| `DOCKER_COMPOSE_ENABLED` | `true` | `false` |
+| `DB_URL` | `jdbc:postgresql://localhost:5436/bd-clientesapi` | Endpoint do Amazon RDS, ex.: `jdbc:postgresql://<endpoint>.rds.amazonaws.com:5432/bd-clientesapi?sslmode=require` |
+| `DB_USERNAME` / `DB_PASSWORD` | `coti` / `coti` | Usuário e senha do RDS |
+| `JPA_DDL_AUTO` | `update` | `update` na primeira publicação; depois `validate` |
+| `JPA_SHOW_SQL` | `true` | `false` |
+| `RABBITMQ_HOST` | `localhost` | Endpoint do Amazon MQ, ex.: `b-xxxx.mq.us-east-1.on.aws` |
+| `RABBITMQ_PORT` | `5672` | `5671` |
+| `RABBITMQ_SSL_ENABLED` | `false` | `true` |
+| `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` | `coti` / `coti` | Usuário e senha do broker |
+| `RABBITMQ_VIRTUAL_HOST` | `/` | `/` |
+| `RABBITMQ_QUEUE_NOTIFICACOES` | `clientes-notificacoes` | `clientes-notificacoes` |
+| `MAIL_HOST` | `localhost` (Mailpit) | Amazon SES, ex.: `email-smtp.us-east-1.amazonaws.com` |
+| `MAIL_PORT` | `1025` | `587` |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | vazios | Credenciais SMTP do SES |
+| `MAIL_SMTP_AUTH` / `MAIL_SMTP_STARTTLS` | `false` / `false` | `true` / `true` |
+| `MAIL_REMETENTE` | `naoresponda@clientesapi.com.br` | Endereço ou domínio verificado no SES |
+| `CORS_ALLOWED_ORIGINS` | `*` (qualquer origem) | Endereço do front-end, ex.: `https://www.webalex.com.br` (várias origens separadas por vírgula) |
+
+- Senhas e credenciais devem vir do **AWS Secrets Manager** ou do **Parameter Store**, nunca gravadas no código ou no repositório.
+- O `.jar` gerado por `./mvnw package` já deixa de fora o suporte ao Docker Compose; `DOCKER_COMPOSE_ENABLED=false` garante o mesmo ao executar pelo Maven.
+- O front-end (`web-clientesFinal`) também precisa apontar para o endereço da API publicada.
+
 ## Endpoints
 
 | Método | Rota | Descrição |

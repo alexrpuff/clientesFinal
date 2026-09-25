@@ -1,32 +1,57 @@
+# ------------------------------------------------------------------
+# Configurações da clientesApi
+#
+# Todo acesso a recurso externo (banco, fila, email, CORS, porta) é
+# lido de uma variável de ambiente: ${VARIAVEL:valor-padrão}.
+# - Localmente, nada precisa ser definido: os valores padrão apontam
+#   para os containers do docker-compose.yml.
+# - Na hospedagem (ex.: AWS), basta definir as variáveis no ambiente
+#   (Elastic Beanstalk, ECS, EC2...), sem alterar este arquivo.
+#   Senhas devem vir do AWS Secrets Manager ou do Parameter Store,
+#   nunca gravadas no código.
+# ------------------------------------------------------------------
+
 spring:
   application:
     name: clientesApi
 
   # Sobe os containers do docker-compose.yml ao iniciar a aplicação
-  # e os mantém em execução ao finalizá-la
+  # e os mantém em execução ao finalizá-la (somente em desenvolvimento)
   docker:
     compose:
+      enabled: ${DOCKER_COMPOSE_ENABLED:true}
       lifecycle-management: start-only
 
+  # Banco de dados PostgreSQL (na AWS: Amazon RDS)
+  # No RDS com PostgreSQL 15 ou superior, o SSL é obrigatório:
+  # acrescente ?sslmode=require ao final de DB_URL
   datasource:
-    url: jdbc:postgresql://localhost:5436/bd-clientesapi
-    username: coti
-    password: coti
+    url: ${DB_URL:jdbc:postgresql://localhost:5436/bd-clientesapi}
+    username: ${DB_USERNAME:coti}
+    password: ${DB_PASSWORD:coti}
 
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      # update: cria/ajusta as tabelas a partir das entidades
+      # (em produção, "validate" apenas confere se as tabelas estão corretas)
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    # Exibir o SQL no log (útil em desenvolvimento, desligue em produção)
+    show-sql: ${JPA_SHOW_SQL:true}
     properties:
       hibernate:
-        format_sql: true
+        format_sql: ${JPA_SHOW_SQL:true}
     open-in-view: false
 
+  # Mensageria RabbitMQ (na AWS: Amazon MQ for RabbitMQ,
+  # que usa a porta 5671 com SSL habilitado)
   rabbitmq:
-    host: localhost
-    port: 5672
-    username: coti
-    password: coti
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:coti}
+    password: ${RABBITMQ_PASSWORD:coti}
+    virtual-host: ${RABBITMQ_VIRTUAL_HOST:/}
+    ssl:
+      enabled: ${RABBITMQ_SSL_ENABLED:false}
     # Se o envio do email falhar, o CONSUMER tenta mais 2 vezes (após 2s e 4s)
     # e depois descarta a mensagem, em vez de reprocessá-la sem parar
     listener:
@@ -38,24 +63,34 @@ spring:
           multiplier: 2
         default-requeue-rejected: false
 
+  # Servidor de email SMTP (na AWS: Amazon SES, porta 587,
+  # com autenticação e STARTTLS habilitados)
   mail:
-    host: localhost
-    port: 1025
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: false
+          auth: ${MAIL_SMTP_AUTH:false}
           starttls:
-            enable: false
+            enable: ${MAIL_SMTP_STARTTLS:false}
 
 # Configurações da mensageria (fila de emails de boas vindas)
 rabbitmq:
   queue:
-    notificacoes: clientes-notificacoes
+    notificacoes: ${RABBITMQ_QUEUE_NOTIFICACOES:clientes-notificacoes}
 
 # Remetente dos emails enviados pela API
+# (no Amazon SES, o endereço ou o domínio precisa estar verificado)
 mail:
-  remetente: naoresponda@clientesapi.com.br
+  remetente: ${MAIL_REMETENTE:naoresponda@clientesapi.com.br}
+
+# Origens (front-ends) que podem chamar a API, separadas por vírgula.
+# Em produção, informe o endereço do front-end, ex.: https://www.webalex.com.br
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
 server:
-  port: 8083
+  port: ${SERVER_PORT:8083}
