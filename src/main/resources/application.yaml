@@ -27,6 +27,16 @@ spring:
     port: 5672
     username: coti
     password: coti
+    # Se o envio do email falhar, o CONSUMER tenta mais 2 vezes (após 2s e 4s)
+    # e depois descarta a mensagem, em vez de reprocessá-la sem parar
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2s
+          multiplier: 2
+        default-requeue-rejected: false
 
   mail:
     host: localhost

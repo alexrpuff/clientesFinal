@@ -22,6 +22,8 @@ public record EditarClienteRequest(
         @NotBlank(message = "O CPF do cliente é obrigatório.")
         String cpf,
 
+        //Ninguém nasce no futuro: a data precisa ser anterior a hoje
+        @Past(message = "A data de nascimento deve ser anterior à data atual.")
         @NotNull(message = "A data de nascimento do cliente é obrigatória.")
         LocalDate dataNascimento,
 

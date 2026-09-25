@@ -9,11 +9,19 @@ import br.com.cotiinformatica.clientesApi.exceptions.RegistroNaoEncontradoExcept
 import br.com.cotiinformatica.clientesApi.repositories.ClienteRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 
+/*
+    Regras de negócio dos clientes e dos seus endereços.
+    Todos os métodos que gravam são @Transactional: ou tudo dá certo
+    (cliente e endereço gravados juntos), ou nada é gravado.
+ */
 @Slf4j
 @Service
 public class ClienteService {
@@ -25,12 +33,14 @@ public class ClienteService {
     private MensagemProducer mensagemProducer;
 
     /*
-        Método para cadastrar um cliente com o seu endereço
+        Método para cadastrar um cliente com o seu endereço.
+        Todo cliente nasce com um endereço: a empresa precisa saber
+        onde encontrá-lo. Outros endereços podem ser incluídos na edição.
      */
     @Transactional
     public ClienteResponse criarCliente(CriarClienteRequest request) {
 
-        //Verificar se o CPF já está cadastrado
+        //Regra: a mesma pessoa (CPF) não pode ser cadastrada duas vezes
         if (clienteRepository.findByCpf(request.cpf()) != null) {
             throw new CpfJaCadastradoException("O CPF informado já está cadastrado, tente outro.");
         }
@@ -50,17 +60,19 @@ public class ClienteService {
         cliente.adicionarEndereco(endereco);
 
         //Salvar o cliente (e o endereço, via cascade) no banco de dados
-        clienteRepository.save(cliente);
+        salvar(cliente);
 
-        //Gravar na fila do RabbitMQ a mensagem de boas vindas para o cliente
-        enviarMensagemBoasVindas(cliente);
+        //Enviar o email de boas vindas somente depois que o cadastro estiver gravado
+        enviarMensagemBoasVindasAposGravar(cliente);
 
         return converterParaResponse(cliente);
     }
 
     /*
         Método para editar os dados de um cliente e de um endereço.
-        Se o id do endereço não for informado, o endereço é adicionado ao cliente.
+        A edição trabalha com um endereço por vez: o cliente escolhe
+        qual endereço quer corrigir. Se o id do endereço não for
+        informado, é um endereço novo e ele é adicionado ao cliente.
      */
     @Transactional
     public ClienteResponse editarCliente(EditarClienteRequest request) {
@@ -68,7 +80,7 @@ public class ClienteService {
         //Buscar o cliente no banco de dados através do ID
         var cliente = buscarClientePorId(request.id());
 
-        //Verificar se o CPF pertence a outro cliente
+        //Regra: o CPF pode continuar o mesmo, mas não pode ser o CPF de outro cliente
         var clienteCpf = clienteRepository.findByCpf(request.cpf());
         if (clienteCpf != null && !clienteCpf.getId().equals(cliente.getId())) {
             throw new CpfJaCadastradoException("O CPF informado já está cadastrado para outro cliente, tente outro.");
@@ -88,6 +100,7 @@ public class ClienteService {
             endereco = new Endereco();
             cliente.adicionarEndereco(endereco);
         } else {
+            //Regra: só é possível editar um endereço que pertença a este cliente
             endereco = cliente.getEnderecos().stream()
                     .filter(e -> e.getId().equals(dados.id()))
                     .findFirst()
@@ -99,18 +112,22 @@ public class ClienteService {
                 dados.bairro(), dados.cidade(), dados.uf(), dados.cep());
 
         //Atualizar no banco de dados
-        clienteRepository.saveAndFlush(cliente);
+        salvar(cliente);
 
         return converterParaResponse(cliente);
     }
 
     /*
-        Método para excluir um cliente e os seus endereços
+        Método para excluir um cliente e os seus endereços.
+        Os endereços saem junto (cascade) porque não faz sentido
+        guardar o endereço de alguém que não é mais cliente.
      */
     @Transactional
     public ClienteResponse excluirCliente(Integer id) {
 
         var cliente = buscarClientePorId(id);
+
+        //Os dados são guardados antes da exclusão para devolver o que foi excluído
         var response = converterParaResponse(cliente);
 
         clienteRepository.delete(cliente);
@@ -144,6 +161,23 @@ public class ClienteService {
                         "Cliente não encontrado. Verifique o ID informado."));
     }
 
+    /*
+        Grava o cliente e confere a regra do CPF único também no banco.
+        A consulta por CPF feita antes não basta quando duas pessoas
+        enviam o mesmo CPF ao mesmo tempo: as duas passam pela consulta
+        e só o banco (restrição UNIQUE) barra a segunda. Nesse caso a
+        resposta continua sendo "CPF já cadastrado" (409), e não um
+        erro interno (500).
+     */
+    private void salvar(Cliente cliente) {
+        try {
+            clienteRepository.saveAndFlush(cliente);
+        }
+        catch (DataIntegrityViolationException e) {
+            throw new CpfJaCadastradoException("O CPF informado já está cadastrado, tente outro.");
+        }
+    }
+
     private void preencherEndereco(Endereco endereco, String logradouro, String complemento, String numero,
                                    String bairro, String cidade, String uf, String cep) {
         endereco.setLogradouro(logradouro);
@@ -151,11 +185,18 @@ public class ClienteService {
         endereco.setNumero(numero);
         endereco.setBairro(bairro);
         endereco.setCidade(cidade);
+        //UF sempre em maiúsculas, para que "rj" e "RJ" sejam o mesmo estado nas consultas
         endereco.setUf(uf.toUpperCase());
         endereco.setCep(cep);
     }
 
-    private void enviarMensagemBoasVindas(Cliente cliente) {
+    /*
+        O email de boas vindas só pode sair se o cadastro realmente foi
+        gravado. Enviar antes do COMMIT poderia dar as boas vindas a um
+        cliente cujo cadastro foi desfeito (rollback). Por isso a
+        mensagem é gravada na fila logo após o COMMIT da transação.
+     */
+    private void enviarMensagemBoasVindasAposGravar(Cliente cliente) {
         var mensagem = new EmailMessageDto(
                 cliente.getEmail(),
                 "Cadastro realizado com sucesso",
@@ -169,6 +210,15 @@ public class ClienteService {
                 """.formatted(cliente.getNome())
         );
 
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                enviarMensagemBoasVindas(mensagem);
+            }
+        });
+    }
+
+    private void enviarMensagemBoasVindas(EmailMessageDto mensagem) {
         try {
             mensagemProducer.enviar(mensagem);
         } catch (Exception e) {
@@ -177,6 +227,11 @@ public class ClienteService {
         }
     }
 
+    /*
+        A API nunca devolve as entidades diretamente, e sim os DTOs de
+        resposta. Assim o JSON não entra em laço (cliente -> endereço ->
+        cliente -> ...) e a API mostra só o que interessa a quem consome.
+     */
     private ClienteResponse converterParaResponse(Cliente cliente) {
         return new ClienteResponse(
                 cliente.getId(),

@@ -7,7 +7,12 @@ import org.springframework.stereotype.Component;
 
 /*
     CONSUMER: lê as mensagens da fila do RabbitMQ
-    e faz o envio dos emails
+    e faz o envio dos emails.
+
+    Se o servidor de email estiver fora do ar, o envio é tentado
+    novamente algumas vezes (configuração spring.rabbitmq.listener
+    no application.yaml). Sem esse limite, a mensagem voltaria para
+    a fila e seria reprocessada sem parar.
  */
 @Component
 public class MensagemConsumer {

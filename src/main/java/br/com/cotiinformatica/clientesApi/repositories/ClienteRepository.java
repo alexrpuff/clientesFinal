@@ -14,7 +14,16 @@ public interface ClienteRepository extends JpaRepository<Cliente, Integer> {
 
     /*
         Consulta todos os clientes com os seus endereços,
-        em ordem alfabética (nome), usando JPQL
+        em ordem alfabética (nome), usando JPQL.
+
+        O JOIN FETCH traz clientes e endereços em uma única ida ao banco.
+        Sem ele, o JPA buscaria os clientes e depois faria mais uma
+        consulta para os endereços de cada cliente (o famoso problema
+        "N+1"): com 1.000 clientes seriam 1.001 consultas.
+
+        LEFT JOIN para não esconder um cliente que esteja sem endereço.
+        DISTINCT porque o JOIN repete o cliente uma vez para cada
+        endereço que ele possui.
      */
     @Query("""
         SELECT DISTINCT c FROM Cliente c
@@ -25,7 +34,7 @@ public interface ClienteRepository extends JpaRepository<Cliente, Integer> {
 
     /*
         Consulta 1 cliente com os seus endereços
-        através do ID, usando JPQL
+        através do ID, usando JPQL (mesmo motivo do JOIN FETCH acima)
      */
     @Query("""
         SELECT c FROM Cliente c

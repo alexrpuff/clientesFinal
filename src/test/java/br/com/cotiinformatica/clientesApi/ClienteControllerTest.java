@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -102,6 +103,19 @@ class ClienteControllerTest {
                         .content(objectMapper.writeValueAsString(cliente)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.nome").exists());
+    }
+
+    @Test
+    @DisplayName("POST /api/clientes - data de nascimento não pode ser futura")
+    void naoDeveCadastrarClienteComDataNascimentoFutura() throws Exception {
+        var cliente = ClienteDataFactory.novoCliente();
+        cliente.put("dataNascimento", LocalDate.now().plusDays(1).toString());
+
+        mockMvc.perform(post("/api/clientes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(cliente)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.dataNascimento").exists());
     }
 
     // ---------- PUT /api/clientes ----------

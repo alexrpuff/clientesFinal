@@ -6,13 +6,30 @@ import br.com.cotiinformatica.clientesApi.exceptions.CpfJaCadastradoException;
 import br.com.cotiinformatica.clientesApi.exceptions.RegistroNaoEncontradoException;
 import br.com.cotiinformatica.clientesApi.services.ClienteService;
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+/*
+    ENDPOINTS de clientes. O controller só recebe a requisição, chama
+    o ClienteService (onde ficam as regras de negócio) e traduz o
+    resultado para o código HTTP certo:
+
+    - 201/200: deu certo, devolve o cliente
+    - 400: dados inválidos (tratado no ValidationExceptionHandler)
+    - 404: cliente ou endereço não existe
+    - 409: o CPF já pertence a outro cliente
+    - 500: erro inesperado
+ */
+@Slf4j
 @RestController
 @RequestMapping("/api/clientes")
 public class ClienteController {
+
+    //Mensagem amigável para erros inesperados (os detalhes técnicos ficam só no log)
+    private static final String MENSAGEM_ERRO_INTERNO =
+            "Não foi possível concluir a operação no momento. Tente novamente em alguns instantes.";
 
     @Autowired
     private ClienteService clienteService;
@@ -33,7 +50,7 @@ public class ClienteController {
         }
         catch (Exception e) {
             //HTTP 500 (INTERNAL SERVER ERROR)
-            return ResponseEntity.status(500).body(e.getMessage());
+            return erroInterno(e);
         }
     }
 
@@ -57,7 +74,7 @@ public class ClienteController {
         }
         catch (Exception e) {
             //HTTP 500 (INTERNAL SERVER ERROR)
-            return ResponseEntity.status(500).body(e.getMessage());
+            return erroInterno(e);
         }
     }
 
@@ -77,7 +94,7 @@ public class ClienteController {
         }
         catch (Exception e) {
             //HTTP 500 (INTERNAL SERVER ERROR)
-            return ResponseEntity.status(500).body(e.getMessage());
+            return erroInterno(e);
         }
     }
 
@@ -93,7 +110,7 @@ public class ClienteController {
         }
         catch (Exception e) {
             //HTTP 500 (INTERNAL SERVER ERROR)
-            return ResponseEntity.status(500).body(e.getMessage());
+            return erroInterno(e);
         }
     }
 
@@ -113,7 +130,18 @@ public class ClienteController {
         }
         catch (Exception e) {
             //HTTP 500 (INTERNAL SERVER ERROR)
-            return ResponseEntity.status(500).body(e.getMessage());
+            return erroInterno(e);
         }
+    }
+
+    /*
+        Em um erro inesperado, quem usa o sistema recebe uma mensagem
+        compreensível. O detalhe técnico (ex.: SQL, nome de tabela)
+        vai para o log, onde a equipe consegue investigar, e não é
+        exposto na resposta da API.
+     */
+    private ResponseEntity<String> erroInterno(Exception e) {
+        log.error("Erro inesperado ao processar a requisição de clientes", e);
+        return ResponseEntity.status(500).body(MENSAGEM_ERRO_INTERNO);
     }
 }
