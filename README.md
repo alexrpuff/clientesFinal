@@ -75,6 +75,56 @@ exceptions      Exceções de negócio
 handlers        Tratamento global dos erros de validação
 ```
 
+### Fluxo de uma requisição
+
+```mermaid
+flowchart TB
+    FE["Front-end Angular<br/><small>envia JSON por HTTP</small>"] --> C["controllers<br/><small>recebe e responde HTTP</small>"]
+    C --> S["services<br/><small>regras de negócio</small>"]
+    S --> R["repositories<br/><small>consultas JPQL</small>"]
+    R --> DB[("PostgreSQL<br/><small>clientes e enderecos</small>")]
+    C -.- D["dtos + handlers<br/><small>contrato e validação (400)</small>"]
+    S -.- E["exceptions<br/><small>regra violada: 404 ou 409</small>"]
+    R -.- EN["entities<br/><small>Cliente 1:N Endereco</small>"]
+```
+
+### Por que cada pacote existe
+
+| Pacote | O que faz | Por que é separado |
+|---|---|---|
+| `controllers` | Recebe as chamadas HTTP e devolve o código certo (201, 200, 404, 409 ou 500). | É a "recepção" da API: não decide nada sobre clientes, só atende e encaminha. Mudar rota ou formato de resposta não toca nas regras de negócio. |
+| `dtos` | Records que definem o que entra (`CriarClienteRequest`, `EditarClienteRequest`) e o que sai (`ClienteResponse`), com as validações nas anotações. | É o contrato com quem usa a API. As entidades nunca são expostas, o que evita laço infinito no JSON (cliente → endereço → cliente...) e permite mudar o banco sem quebrar o front-end. |
+| `handlers` | O `ValidationExceptionHandler` transforma erros de validação em uma resposta 400 com a mensagem de cada campo. | Sem ele, cada endpoint montaria a própria resposta de erro. Centralizado, o formato é igual em toda a API. |
+| `services` | O `ClienteService` aplica as regras de negócio e controla as transações (`@Transactional`). | É o "cérebro" do sistema: as regras moram num lugar só. O controller e o banco podem mudar e as regras continuam as mesmas. |
+| `exceptions` | `CpfJaCadastradoException` e `RegistroNaoEncontradoException`. | Dão nome aos problemas de negócio. O service diz o que aconteceu ("CPF já existe") e o controller decide como responder (409). |
+| `repositories` | O `ClienteRepository` faz as consultas JPQL, com `JOIN FETCH` para trazer clientes e endereços numa só ida ao banco. | Isola o acesso ao banco: o service pede "clientes em ordem alfabética" sem saber como a consulta é escrita. |
+| `entities` | `Cliente` e `Endereco`, mapeados para as tabelas com JPA (1:N). | Representam os dados como existem no banco, e o relacionamento reflete a realidade: uma pessoa pode ter vários endereços; cada endereço é de uma pessoa só. |
+| `components` | `MensagemProducer`, `MensagemConsumer` e `EmailComponent`. | Infraestrutura que o service usa, mas que não é regra de negócio. O servidor de email pode mudar sem afetar o cadastro. |
+| `configurations` | Swagger (documentação), CORS (permite o front-end chamar a API) e RabbitMQ (fila em JSON). | Configurações técnicas num lugar previsível, separadas do código de negócio. |
+
+### Fluxo do email de boas vindas
+
+```mermaid
+flowchart LR
+    S["services<br/><small>após o COMMIT</small>"] --> P["MensagemProducer<br/><small>grava na fila</small>"]
+    P --> Q[["Fila RabbitMQ<br/><small>clientes-notificacoes</small>"]]
+    Q --> CO["MensagemConsumer<br/><small>3 tentativas se falhar</small>"]
+    CO --> EM["EmailComponent<br/><small>monta o email</small>"]
+    EM --> MP["Mailpit (SMTP)<br/><small>email de boas vindas</small>"]
+```
+
+A fila funciona como deixar uma carta na caixa do correio em vez de esperar o carteiro na porta: o cadastro termina na hora, o cliente não espera o servidor de email responder, e uma falha no email não desfaz o cadastro.
+
+### Fora do código Java
+
+| Item | Por que existe |
+|---|---|
+| `application.yaml` | Conexões com banco, fila e email e a porta 8083 num lugar só: trocar de ambiente é mudar este arquivo, não o código. |
+| `docker-compose.yml` | Sobe PostgreSQL, pgAdmin, RabbitMQ e Mailpit com um comando, sem instalar nada disso na máquina. |
+| `backup-bd-clientesapi.sql` | Restaura a estrutura do banco e os clientes de exemplo. |
+| `docs/api-docs.json` | Cópia da documentação da API para importar no Postman. |
+| `src/test` | Testes de integração de cada endpoint (sucesso e erro) e do fluxo completo de email, conferido no Mailpit. |
+
 ## Testes
 
 Testes de integração com JUnit 5, MockMvc e Java Faker para cada endpoint e para o fluxo de mensageria (o email é verificado pela API do Mailpit). Requer os containers em execução:
