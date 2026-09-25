@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: clientesApi
+
+  # Sobe os containers do docker-compose.yml ao iniciar a aplicação
+  # e os mantém em execução ao finalizá-la
+  docker:
+    compose:
+      lifecycle-management: start-only
+
+  datasource:
+    url: jdbc:postgresql://localhost:5436/bd-clientesapi
+    username: coti
+    password: coti
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: coti
+    password: coti
+
+  mail:
+    host: localhost
+    port: 1025
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+
+# Configurações da mensageria (fila de emails de boas vindas)
+rabbitmq:
+  queue:
+    notificacoes: clientes-notificacoes
+
+# Remetente dos emails enviados pela API
+mail:
+  remetente: naoresponda@clientesapi.com.br
+
+server:
+  port: 8083

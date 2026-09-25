@@ -1,0 +1,80 @@
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: clientesapi-postgres
+    restart: always
+    ports:
+      - "5436:5432"
+    environment:
+      POSTGRES_DB: bd-clientesapi
+      POSTGRES_USER: coti
+      POSTGRES_PASSWORD: coti
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - clientesapi-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coti -d bd-clientesapi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: clientesapi-pgadmin
+    restart: always
+    ports:
+      - "5053:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: coti@email.com
+      PGADMIN_DEFAULT_PASSWORD: "Coti@2026"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - clientesapi-network
+    depends_on:
+      - postgres
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: clientesapi-rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Painel de administração (http://localhost:15672)
+    environment:
+      RABBITMQ_DEFAULT_USER: coti
+      RABBITMQ_DEFAULT_PASS: coti
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - clientesapi-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: clientesapi-mailpit
+    restart: always
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Caixa de entrada (http://localhost:8025)
+    networks:
+      - clientesapi-network
+
+volumes:
+  postgres_data:
+    name: clientesapi-postgres-data
+  pgadmin_data:
+    name: clientesapi-pgadmin-data
+  rabbitmq_data:
+    name: clientesapi-rabbitmq-data
+
+networks:
+  clientesapi-network:
+    name: clientesapi-network
+    driver: bridge
